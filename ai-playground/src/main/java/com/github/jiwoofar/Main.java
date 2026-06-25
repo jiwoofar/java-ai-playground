@@ -1,17 +1,94 @@
 package com.github.jiwoofar;
 
-//TIP 코드를 <b>실행</b>하려면 <shortcut actionId="Run"/>을(를) 누르거나
-// 에디터 여백에 있는 <icon src="AllIcons.Actions.Execute"/> 아이콘을 클릭하세요.
-public class Main {
-    public static void main(String[] args) {
-        //TIP 캐럿을 강조 표시된 텍스트에 놓고 <shortcut actionId="ShowIntentionActions"/>을(를) 누르면
-        // IntelliJ IDEA이(가) 수정을 제안하는 것을 확인할 수 있습니다.
-        System.out.printf("Hello and welcome!");
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
-        for (int i = 1; i <= 5; i++) {
-            //TIP <shortcut actionId="Debug"/>을(를) 눌러 코드 디버그를 시작하세요. 1개의 <icon src="AllIcons.Debugger.Db_set_breakpoint"/> 중단점을 설정해 드렸습니다
-            // 언제든 <shortcut actionId="ToggleLineBreakpoint"/>을(를) 눌러 중단점을 더 추가할 수 있습니다.
-            System.out.println("i = " + i);
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Scanner;
+
+public class Main {
+    private static final String API_URL = "https://api.openai.com/v1/responses";
+    private static final String OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
+    private static final String MODEL = "gpt-5.4-mini";
+
+    public static void main(String[] args) throws Exception {
+        String apiKey = System.getenv(OPENAI_API_KEY_ENV);
+        if (apiKey == null || apiKey.isBlank()) {
+            System.err.println("OPENAI_API_KEY 환경 변수를 설정하세요.");
+            return;
         }
+
+        String question = readQuestion(args);
+        if (question.isEmpty()) {
+            System.err.println("질문이 비어 있습니다.");
+            return;
+        }
+
+        String answer = askOpenAI(apiKey, question);
+        System.out.println();
+        System.out.println("답변:");
+        System.out.println(answer);
+    }
+
+    private static String readQuestion(String[] args) {
+        if (args.length > 0) {
+            return String.join(" ", args).trim();
+        }
+
+        System.out.print("질문: ");
+        Scanner scanner = new Scanner(System.in, StandardCharsets.UTF_8);
+        if (!scanner.hasNextLine()) {
+            return "";
+        }
+        return scanner.nextLine().trim();
+    }
+
+    private static String askOpenAI(String apiKey, String question) throws IOException, InterruptedException {
+        ObjectMapper objectMapper = new ObjectMapper();
+        String requestBody = objectMapper.createObjectNode()
+                .put("model", MODEL)
+                .put("input", question)
+                .toString();
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(API_URL))
+                .timeout(Duration.ofSeconds(60))
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .build();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() / 100 != 2) {
+            throw new IllegalStateException("OpenAI API 호출 실패: " + response.statusCode() + " " + response.body());
+        }
+
+        JsonNode root = objectMapper.readTree(response.body());
+        JsonNode output = root.path("output");
+        if (output.isMissingNode() || !output.isArray()) {
+            throw new IllegalStateException("응답 형식을 해석할 수 없습니다.");
+        }
+
+        for (JsonNode item : output) {
+            JsonNode content = item.path("content");
+            if (!content.isArray()) {
+                continue;
+            }
+            for (JsonNode part : content) {
+                if ("output_text".equals(part.path("type").asText())) {
+                    return part.path("text").asText();
+                }
+            }
+        }
+
+        throw new IllegalStateException("응답에서 텍스트를 찾지 못했습니다.");
     }
 }
