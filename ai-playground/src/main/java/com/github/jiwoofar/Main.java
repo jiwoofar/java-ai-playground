@@ -13,16 +13,19 @@ import java.time.Duration;
 import java.util.Scanner;
 
 public class Main {
-    private static final String API_URL = "https://api.openai.com/v1/responses";
+    /*private static final String API_URL = "https://api.openai.com/v1/responses";
     private static final String OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
-    private static final String MODEL = "gpt-5.4-mini";
+    private static final String MODEL = "gpt-5.4-mini";*/
+
+    private static final String API_URL = "http://localhost:11434/api/generate";
+    private static final String MODEL = "qwen3:4b";
 
     public static void main(String[] args) throws Exception {
-        String apiKey = System.getenv(OPENAI_API_KEY_ENV);
+        /*String apiKey = System.getenv(OPENAI_API_KEY_ENV);
         if (apiKey == null || apiKey.isBlank()) {
             System.err.println("OPENAI_API_KEY 환경 변수를 설정하세요.");
             return;
-        }
+        }*/
 
         String question = readQuestion(args);
         if (question.isEmpty()) {
@@ -30,7 +33,8 @@ public class Main {
             return;
         }
 
-        String answer = askOpenAI(apiKey, question);
+        //String answer = askOpenAI(apiKey, question);
+        String answer = askOpenAI(question);
         System.out.println();
         System.out.println("답변:");
         System.out.println(answer);
@@ -49,17 +53,20 @@ public class Main {
         return scanner.nextLine().trim();
     }
 
-    private static String askOpenAI(String apiKey, String question) throws IOException, InterruptedException {
+    //private static String askOpenAI(String apiKey, String question) throws IOException, InterruptedException {
+    private static String askOpenAI(String question) throws IOException, InterruptedException {
         ObjectMapper objectMapper = new ObjectMapper();
         String requestBody = objectMapper.createObjectNode()
                 .put("model", MODEL)
-                .put("input", question)
+                .put("prompt", question)
+                .put("stream", false)
                 .toString();
+        System.out.println(requestBody);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(API_URL))
                 .timeout(Duration.ofSeconds(60))
-                .header("Authorization", "Bearer " + apiKey)
+                //.header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build();
@@ -67,12 +74,16 @@ public class Main {
         HttpClient client = HttpClient.newHttpClient();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
+        System.out.println(response.body());
+
         if (response.statusCode() / 100 != 2) {
             throw new IllegalStateException("OpenAI API 호출 실패: " + response.statusCode() + " " + response.body());
         }
 
         JsonNode root = objectMapper.readTree(response.body());
-        JsonNode output = root.path("output");
+        return root.path("response").asText();
+
+        /*JsonNode output = root.path("output");
         if (output.isMissingNode() || !output.isArray()) {
             throw new IllegalStateException("응답 형식을 해석할 수 없습니다.");
         }
@@ -90,5 +101,6 @@ public class Main {
         }
 
         throw new IllegalStateException("응답에서 텍스트를 찾지 못했습니다.");
+         */
     }
 }
